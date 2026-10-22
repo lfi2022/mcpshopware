@@ -3,7 +3,6 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { createServer } from "node:http";
-import { randomUUID } from 'node:crypto';
 import { createRemoteJWKSet, jwtVerify } from "jose";
 import { LocalOAuthProvider } from './local-oauth.js';
 import { z } from "zod";
@@ -80,7 +79,10 @@ function result(data: unknown) { return { content: [{ type: 'text' as const, tex
 function mutatingNotice(action: string) { return `Opération confirmée : ${action}`; }
 function assertConfirmed(confirm: boolean, operation: string) { if (!confirm) throw new Error(`${operation} peut modifier Shopware. Relancez avec confirm: true après validation.`); }
 
-const server = new McpServer({ name: 'shopware6-admin', version: '0.1.0' });
+const SERVER_VERSION = '0.1.1';
+
+function createMcpServer() {
+const server = new McpServer({ name: 'shopware6-admin', version: SERVER_VERSION });
 
 server.tool('shopware_status', 'Teste l’authentification Admin API et retourne des informations de l’instance.', {}, async () => result(await api('/api/_info/version')));
 server.tool('shopware_entities', 'Liste les définitions d’entités disponibles, y compris celles des extensions.', {}, async () => result(await api('/api/_info/entity-schema.json')));
@@ -224,6 +226,9 @@ if (listToolsHandler) {
   });
 }
 
+return server;
+}
+
 const transportMode = process.env.MCP_TRANSPORT ?? 'stdio';
 
 if (transportMode === 'http') {
@@ -277,12 +282,13 @@ if (transportMode === 'http') {
     response.writeHead(401, { 'www-authenticate': header }).end();
   }
 
-  // A stateful transport is required so one MCP connection can call tools/list and tools/call after initialize.
-  // The client receives Mcp-Session-Id during initialize and returns it on subsequent requests.
-  const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: randomUUID });
-  await server.connect(transport);
   const httpServer = createServer(async (request, response) => {
     const path = new URL(request.url ?? '/', `http://${request.headers.host ?? 'localhost'}`).pathname;
+    if (path === '/mcp') {
+      const started = Date.now();
+      response.once('finish', () => console.error(`[MCP] ${request.method} /mcp -> ${response.statusCode} (${Date.now() - started}ms)`));
+    }
+    try {
     if (localOAuth && await localOAuth.handle(request, response, path)) return;
     if ((authMode === 'oauth' || authMode === 'local-oauth') && (path === '/.well-known/oauth-protected-resource' || path === '/.well-known/oauth-protected-resource/mcp')) {
       response.writeHead(200, { 'content-type': 'application/json' });
@@ -291,7 +297,7 @@ if (transportMode === 'http') {
     }
     if (path === '/healthz' && request.method === 'GET') {
       response.writeHead(200, { 'content-type': 'application/json' });
-      response.end(JSON.stringify({ status: 'ok' }));
+      response.end(JSON.stringify({ status: 'ok', version: SERVER_VERSION, transport: 'streamable-http-stateless' }));
       return;
     }
     if (path !== '/mcp') {
@@ -302,7 +308,19 @@ if (transportMode === 'http') {
       : authMode === 'local-oauth' ? await localOAuth!.verify(request.headers.authorization)
       : request.headers.authorization === `Bearer ${bearerToken}`;
     if (!authenticated) return unauthorized(response);
-    try {
+    // Each HTTP request owns a fresh server and transport. A shared stateful
+    // transport rejects the next client's initialize as "already initialized".
+    // No session header or sticky routing is needed by clients or the proxy.
+    if (request.method !== 'POST') {
+      response.writeHead(405, { allow: 'POST' }).end();
+      return;
+    }
+    const server = createMcpServer();
+    const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined, enableJsonResponse: true });
+    response.once('close', () => {
+      void server.close().catch(error => console.error('Fermeture MCP:', error));
+    });
+    await server.connect(transport);
       await transport.handleRequest(request, response);
     } catch (error) {
       console.error('Erreur MCP HTTP:', error);
@@ -312,7 +330,7 @@ if (transportMode === 'http') {
   httpServer.listen(port, host, () => console.error(`Shopware MCP HTTP écoute sur http://${host}:${port}/mcp`));
   for (const signal of ['SIGINT', 'SIGTERM'] as const) process.once(signal, () => httpServer.close(() => process.exit(0)));
 } else if (transportMode === 'stdio') {
-  await server.connect(new StdioServerTransport());
+  await createMcpServer().connect(new StdioServerTransport());
 } else {
   throw new Error("MCP_TRANSPORT doit être 'stdio' ou 'http'.");
 }

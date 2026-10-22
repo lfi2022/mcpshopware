@@ -4,6 +4,31 @@ Serveur MCP local pour administrer une instance Shopware 6 par son **Admin API**
 
 ## Installation
 
+### Déploiement HTTP avec PM2
+
+Depuis le dossier du projet sur le serveur, après transfert de la dernière version :
+
+```bash
+npm ci --include=dev
+npm run build
+pm2 startOrRestart ecosystem.config.cjs --update-env
+curl -sS http://127.0.0.1:4569/healthz
+```
+
+Le fichier `.env` doit définir `MCP_TRANSPORT=http`, `MCP_HOST=0.0.0.0`,
+`MCP_PORT=4569`, `MCP_PUBLIC_URL=https://mcp2.lfinfo.be` et les paramètres
+d'authentification. Dans ChatGPT, l'URL MCP est `https://mcp2.lfinfo.be/mcp`.
+La version 0.1.1 utilise un serveur et un transport stateless distincts pour
+chaque requête HTTP : plusieurs clients peuvent initialiser leur connexion sans
+collision. `/healthz` retourne la version déployée et le mode de transport.
+Les lignes `[MCP]` des journaux PM2 indiquent méthode, statut HTTP et durée,
+sans journaliser les en-têtes d'authentification ni les corps.
+
+`npm test` vérifie la découverte avec plusieurs clients MCP indépendants,
+successifs et simultanés. Le test ne contacte pas Shopware.
+
+### Installation locale
+
 ```powershell
 npm install
 npm run build
