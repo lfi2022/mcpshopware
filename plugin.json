@@ -1,0 +1,20 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "shopware6-admin",
+  "version": "0.1.0",
+  "description": "Administration complète d'une instance Shopware 6 via l'Admin API.",
+  "author": { "name": "Local" },
+  "keywords": ["shopware", "shopware-6", "ecommerce", "admin-api", "mcp"],
+  "extensions": {
+    "com.openai": {
+      "interface": {
+        "displayName": "Shopware 6 Admin",
+        "shortDescription": "Administre Shopware 6 avec l'Admin API.",
+        "longDescription": "Connecteur MCP local pour consulter et administrer les entités et actions de Shopware 6.",
+        "developerName": "Local",
+        "category": "Developer Tools",
+        "capabilities": []
+      }
+    }
+  }
+}
