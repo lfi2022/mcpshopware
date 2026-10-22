@@ -1,8 +1,10 @@
+import 'dotenv/config';
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { createServer } from "node:http";
 import { createRemoteJWKSet, jwtVerify } from "jose";
+import { LocalOAuthProvider } from './local-oauth.js';
 import { z } from "zod";
 
 type Json = Record<string, unknown>;
@@ -170,7 +172,7 @@ if (transportMode === 'http') {
   const authMode = process.env.MCP_AUTH_MODE ?? 'bearer';
   const bearerToken = process.env.MCP_BEARER_TOKEN;
   if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error('MCP_PORT doit être un port valide.');
-  if (!['bearer', 'oauth'].includes(authMode)) throw new Error("MCP_AUTH_MODE doit être 'bearer' ou 'oauth'.");
+  if (!['bearer', 'oauth', 'local-oauth'].includes(authMode)) throw new Error("MCP_AUTH_MODE doit être 'bearer', 'oauth' ou 'local-oauth'.");
   if (authMode === 'bearer' && (!bearerToken || bearerToken.length < 24)) throw new Error('En mode bearer, définissez un MCP_BEARER_TOKEN aléatoire d’au moins 24 caractères.');
   const issuer = process.env.OAUTH_ISSUER?.replace(/\/$/, '');
   const audience = process.env.OAUTH_AUDIENCE ?? publicUrl;
@@ -178,6 +180,16 @@ if (transportMode === 'http') {
   if (authMode === 'oauth' && (!publicUrl?.startsWith('https://') || !issuer?.startsWith('https://') || !audience)) {
     throw new Error('En mode OAuth, MCP_PUBLIC_URL, OAUTH_ISSUER et OAUTH_AUDIENCE (ou MCP_PUBLIC_URL) HTTPS sont requis.');
   }
+  const localOAuth = authMode === 'local-oauth'
+    ? new LocalOAuthProvider({
+      publicUrl: publicUrl ?? '', adminUsername: process.env.OAUTH_ADMIN_USERNAME ?? '', adminPassword: process.env.OAUTH_ADMIN_PASSWORD ?? '',
+      signingSecret: process.env.OAUTH_SIGNING_SECRET ?? '', storagePath: process.env.OAUTH_STORAGE_PATH ?? './.data/oauth-clients.json', scopes
+    })
+    : undefined;
+  if (authMode === 'local-oauth' && (!publicUrl?.startsWith('https://') || !process.env.OAUTH_ADMIN_USERNAME || !process.env.OAUTH_ADMIN_PASSWORD)) {
+    throw new Error('En mode local-oauth, MCP_PUBLIC_URL HTTPS, OAUTH_ADMIN_USERNAME et OAUTH_ADMIN_PASSWORD sont requis.');
+  }
+  if (localOAuth) await localOAuth.init();
   let jwks: ReturnType<typeof createRemoteJWKSet> | undefined;
   async function verifyOAuth(authorization: string | undefined) {
     if (!authorization?.startsWith('Bearer ')) return false;
@@ -198,7 +210,7 @@ if (transportMode === 'http') {
   }
   function unauthorized(response: import('node:http').ServerResponse) {
     const metadataUrl = `${publicUrl}/.well-known/oauth-protected-resource`;
-    const header = authMode === 'oauth'
+    const header = authMode === 'oauth' || authMode === 'local-oauth'
       ? `Bearer resource_metadata="${metadataUrl}", error="invalid_token"`
       : 'Bearer';
     response.writeHead(401, { 'www-authenticate': header }).end();
@@ -209,9 +221,10 @@ if (transportMode === 'http') {
   await server.connect(transport);
   const httpServer = createServer(async (request, response) => {
     const path = new URL(request.url ?? '/', `http://${request.headers.host ?? 'localhost'}`).pathname;
-    if (authMode === 'oauth' && (path === '/.well-known/oauth-protected-resource' || path === '/.well-known/oauth-protected-resource/mcp')) {
+    if (localOAuth && await localOAuth.handle(request, response, path)) return;
+    if ((authMode === 'oauth' || authMode === 'local-oauth') && (path === '/.well-known/oauth-protected-resource' || path === '/.well-known/oauth-protected-resource/mcp')) {
       response.writeHead(200, { 'content-type': 'application/json' });
-      response.end(JSON.stringify({ resource: publicUrl, authorization_servers: [issuer], scopes_supported: scopes, bearer_methods_supported: ['header'] }));
+      response.end(JSON.stringify({ resource: publicUrl, authorization_servers: [authMode === 'local-oauth' ? publicUrl : issuer], scopes_supported: scopes, bearer_methods_supported: ['header'] }));
       return;
     }
     if (path === '/healthz' && request.method === 'GET') {
@@ -223,8 +236,8 @@ if (transportMode === 'http') {
       response.writeHead(404).end();
       return;
     }
-    const authenticated = authMode === 'oauth'
-      ? await verifyOAuth(request.headers.authorization)
+    const authenticated = authMode === 'oauth' ? await verifyOAuth(request.headers.authorization)
+      : authMode === 'local-oauth' ? await localOAuth!.verify(request.headers.authorization)
       : request.headers.authorization === `Bearer ${bearerToken}`;
     if (!authenticated) return unauthorized(response);
     try {

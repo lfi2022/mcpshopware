@@ -10,7 +10,7 @@ npm run build
 Copy-Item .env.example .env
 ```
 
-Renseignez les variables de `.env` dans l'environnement qui lance le serveur (ou dans la configuration MCP de ChatGPT/Codex) : `SHOPWARE_URL`, `SHOPWARE_CLIENT_ID` et `SHOPWARE_CLIENT_SECRET`.
+Renseignez les variables de `.env` (chargé automatiquement par le serveur) ou de l'environnement qui lance le processus : `SHOPWARE_URL`, `SHOPWARE_CLIENT_ID` et `SHOPWARE_CLIENT_SECRET`.
 
 Dans Shopware : **Paramètres > Système > Intégrations**, créez une intégration avec les droits nécessaires. Le mode Administrateur donne l'accès complet ; une intégration ACL restreinte est préférable en production.
 
@@ -84,10 +84,25 @@ Votre fournisseur doit prendre en charge OAuth Authorization Code avec PKCE S256
 
 Les identifiants Shopware restent sur le serveur dans les variables `SHOPWARE_*`; l’utilisateur ChatGPT ne les voit jamais et son jeton OAuth ne donne accès qu’au connecteur.
 
-Exemple Nginx :
+### Fournisseur OAuth local autonome
+
+Pour une installation privée sans Auth0, Keycloak ou autre dépendance, le projet peut aussi être son propre fournisseur OAuth. Activez `MCP_AUTH_MODE=local-oauth`, puis créez un compte de connexion dédié (ce compte ne doit pas être votre mot de passe Shopware) et une clé de signature :
+
+```bash
+MCP_AUTH_MODE=local-oauth
+MCP_PUBLIC_URL=https://mcp2.lfinfo.be
+OAUTH_ADMIN_USERNAME=admin-mcp
+OAUTH_ADMIN_PASSWORD='un-mot-de-passe-long-et-unique'
+OAUTH_SIGNING_SECRET="$(openssl rand -base64 48)"
+OAUTH_STORAGE_PATH=./.data/oauth-clients.json
+```
+
+Ce mode expose la découverte OAuth, l’inscription dynamique du client ChatGPT, Authorization Code + PKCE S256, une page de connexion locale et des jetons signés. Les clients OAuth enregistrés sont stockés dans `.data/oauth-clients.json`, hors Git ; sauvegardez ce fichier avec votre `.env`. Utilisez HTTPS, des permissions `600` sur `.env`, et ne perdez pas `OAUTH_SIGNING_SECRET` (sinon les sessions existantes sont invalidées).
+
+Exemple Nginx pour un sous-domaine MCP dédié :
 
 ```nginx
-location /mcp {
+location / {
     proxy_pass http://127.0.0.1:3000;
     proxy_http_version 1.1;
     proxy_set_header Host $host;
@@ -96,11 +111,9 @@ location /mcp {
     proxy_read_timeout 3600s;
     proxy_buffering off;
 }
-
-location = /healthz {
-    proxy_pass http://127.0.0.1:3000;
-}
 ```
+
+Ce bloc expose `/mcp`, `/healthz`, `/.well-known/oauth-protected-resource` et les routes `/oauth/*` nécessaires au mode OAuth.
 
 Ne publiez jamais le port `3000` directement et ne stockez pas les secrets dans `ecosystem.config.cjs` ou Git.
 
