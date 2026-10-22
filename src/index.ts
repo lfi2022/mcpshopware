@@ -115,6 +115,51 @@ server.tool('shopware_update', 'Met à jour une entité DAL existante.', {
   return result({ message: mutatingNotice('mise à jour'), response: await api(`/api/${entity}/${id}`, 'PATCH', payload) });
 });
 
+server.tool('shopware_update_product', 'Met à jour un article / produit : nom, description, prix, stock, visibilité, médias, catégories, traductions, propriétés ou champs personnalisés. Le payload est le document Admin API product partiel.', {
+  productId: identifier.describe('UUID du produit.'),
+  payload: jsonObject.describe('Champs à modifier, par exemple {"name":"Nouveau nom","active":true,"stock":12}.'),
+  confirm: z.boolean().default(false)
+}, async ({ productId, payload, confirm }) => {
+  assertConfirmed(confirm, 'La mise à jour du produit');
+  return result({ message: mutatingNotice('mise à jour du produit'), response: await api(`/api/product/${productId}`, 'PATCH', payload) });
+});
+
+server.tool('shopware_update_content_page', 'Met à jour une page CMS, une landing page ou une catégorie (dont son association à une page CMS). Utilisez le payload Admin API partiel : name, sections, active, cmsPageId, metaTitle, metaDescription, etc.', {
+  type: z.enum(['cms_page', 'landing_page', 'category']),
+  id: identifier.describe('UUID de la page ou catégorie.'),
+  payload: jsonObject.describe('Champs à modifier selon le type d’entité.'),
+  confirm: z.boolean().default(false)
+}, async ({ type, id, payload, confirm }) => {
+  assertConfirmed(confirm, 'La mise à jour de la page');
+  return result({ message: mutatingNotice(`mise à jour ${type}`), response: await api(`/api/${type}/${id}`, 'PATCH', payload) });
+});
+
+server.tool('shopware_update_seo_url', 'Met à jour une URL SEO existante. Sert notamment à modifier seoPathInfo, isCanonical ou isModified après avoir identifié la seo_url avec shopware_search.', {
+  seoUrlId: identifier.describe('UUID de l’entité seo_url.'),
+  payload: jsonObject.describe('Champs SEO à modifier, par exemple {"seoPathInfo":"mon-url","isCanonical":true,"isModified":true}.'),
+  confirm: z.boolean().default(false)
+}, async ({ seoUrlId, payload, confirm }) => {
+  assertConfirmed(confirm, 'La mise à jour de l’URL SEO');
+  return result({ message: mutatingNotice('mise à jour de l’URL SEO'), response: await api(`/api/seo_url/${seoUrlId}`, 'PATCH', payload) });
+});
+
+server.tool('shopware_create_custom_seo_url', 'Crée une URL SEO personnalisée via l’action officielle Shopware. Fournissez le payload demandé par votre version de Shopware (routeName, foreignKey, pathInfo, seoPathInfo, salesChannelId, languageId…).', {
+  payload: jsonObject.describe('Payload de /api/_action/seo-url/create-custom-url.'),
+  confirm: z.boolean().default(false)
+}, async ({ payload, confirm }) => {
+  assertConfirmed(confirm, 'La création de l’URL SEO personnalisée');
+  return result({ message: mutatingNotice('création de l’URL SEO personnalisée'), response: await api('/api/_action/seo-url/create-custom-url', 'POST', payload) });
+});
+
+server.tool('shopware_update_seo_template', 'Met à jour un modèle d’URL SEO. Shopware régénère ensuite les URL concernées selon sa configuration.', {
+  templateId: identifier.describe('UUID de l’entité seo_url_template.'),
+  payload: jsonObject.describe('Par exemple {"template":"{{ product.translated.name }}"}.'),
+  confirm: z.boolean().default(false)
+}, async ({ templateId, payload, confirm }) => {
+  assertConfirmed(confirm, 'La mise à jour du modèle SEO');
+  return result({ message: mutatingNotice('mise à jour du modèle SEO'), response: await api(`/api/seo_url_template/${templateId}`, 'PATCH', payload) });
+});
+
 server.tool('shopware_delete', 'Supprime définitivement une entité DAL.', { entity: entityName, id: identifier, confirm: z.boolean().default(false) }, async ({ entity, id, confirm }) => {
   assertConfirmed(confirm, 'La suppression');
   return result({ message: mutatingNotice('suppression'), response: await api(`/api/${entity}/${id}`, 'DELETE') });
@@ -163,6 +208,21 @@ server.tool('shopware_admin_request', 'Échappatoire pour une route Admin API of
   if (method !== 'GET') assertConfirmed(confirm, `La requête ${path}`);
   return result({ ...(method === 'GET' ? {} : { message: mutatingNotice(path) }), response: await api(path, method, body) });
 });
+
+// ChatGPT uses this MCP extension to understand that every Shopware tool requires OAuth.
+// The current TypeScript SDK does not yet expose securitySchemes in McpServer.registerTool,
+// so enrich the already-installed tools/list handler without changing tool execution.
+const requestHandlers = (server.server as unknown as { _requestHandlers: Map<string, (request: unknown, extra: unknown) => Promise<{ tools?: Array<Record<string, unknown>> }> > })._requestHandlers;
+const listToolsHandler = requestHandlers.get('tools/list');
+if (listToolsHandler) {
+  requestHandlers.set('tools/list', async (request, extra) => {
+    const listing = await listToolsHandler(request, extra);
+    return {
+      ...listing,
+      tools: listing.tools?.map(tool => ({ ...tool, securitySchemes: [{ type: 'oauth2', scopes: ['shopware:admin'] }] }))
+    };
+  });
+}
 
 const transportMode = process.env.MCP_TRANSPORT ?? 'stdio';
 

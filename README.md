@@ -30,6 +30,9 @@ Ajoutez ensuite `mcp.json` comme connecteur local. Avant de démarrer, transmett
 - `shopware_entities` : liste des entités connues par l'instance.
 - `shopware_search`, `shopware_get` : lecture DAL avec critères Shopware complets.
 - `shopware_create`, `shopware_upsert`, `shopware_update`, `shopware_delete` : écritures d'entités, avec confirmation explicite pour suppression.
+- `shopware_update_product` : édition guidée des articles / produits (prix, stock, texte, médias, catégories, traductions…).
+- `shopware_update_content_page` : édition des pages CMS, landing pages et catégories, y compris leurs métadonnées.
+- `shopware_update_seo_url`, `shopware_create_custom_seo_url`, `shopware_update_seo_template` : gestion des URL et modèles SEO.
 - `shopware_sync` : opérations de masse sur `/api/_action/sync`.
 - `shopware_action` : accès contrôlé aux actions Admin API non couvertes, par exemple documents, cache, indexation, import/export, règles et configuration.
 - `shopware_admin_request` : accès de dernier recours à toute route officielle `/api/*`, y compris les routes d'extensions ; les routes OAuth sont bloquées.
