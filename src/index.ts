@@ -3,6 +3,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { createServer } from "node:http";
+import { randomUUID } from 'node:crypto';
 import { createRemoteJWKSet, jwtVerify } from "jose";
 import { LocalOAuthProvider } from './local-oauth.js';
 import { z } from "zod";
@@ -216,8 +217,9 @@ if (transportMode === 'http') {
     response.writeHead(401, { 'www-authenticate': header }).end();
   }
 
-  // Stateless mode: ideal behind a load balancer/reverse proxy and no session state is kept in memory.
-  const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });
+  // A stateful transport is required so one MCP connection can call tools/list and tools/call after initialize.
+  // The client receives Mcp-Session-Id during initialize and returns it on subsequent requests.
+  const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: randomUUID });
   await server.connect(transport);
   const httpServer = createServer(async (request, response) => {
     const path = new URL(request.url ?? '/', `http://${request.headers.host ?? 'localhost'}`).pathname;
