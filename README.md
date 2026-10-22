@@ -45,6 +45,43 @@ Les outils DAL universels rendent le serveur compatible avec les entités native
 - Les routes commençant par `/api/oauth` et les URL externes sont refusées par `shopware_action`.
 - Pour une boutique de production, utilisez une intégration ACL avec le minimum de droits et une instance de test avant les opérations de masse.
 
+## Déploiement PM2 derrière un reverse proxy
+
+Le transport local par défaut est `stdio` et **n'ouvre pas de port**. Pour un déploiement serveur, utilisez le mode MCP Streamable HTTP. Le serveur écoute volontairement sur `127.0.0.1` : seul le reverse proxy doit être public.
+
+```bash
+npm ci
+npm run build
+export SHOPWARE_URL='https://shop.example.com'
+export SHOPWARE_CLIENT_ID='...'
+export SHOPWARE_CLIENT_SECRET='...'
+export MCP_BEARER_TOKEN="$(openssl rand -hex 32)"
+pm2 start ecosystem.config.cjs
+pm2 save
+```
+
+L'URL MCP est `https://mcp.example.com/mcp`; `GET /healthz` est disponible localement pour la supervision. Ajoutez le jeton dans le client sous la forme `Authorization: Bearer <MCP_BEARER_TOKEN>`.
+
+Exemple Nginx :
+
+```nginx
+location /mcp {
+    proxy_pass http://127.0.0.1:3000;
+    proxy_http_version 1.1;
+    proxy_set_header Host $host;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_read_timeout 3600s;
+    proxy_buffering off;
+}
+
+location = /healthz {
+    proxy_pass http://127.0.0.1:3000;
+}
+```
+
+Ne publiez jamais le port `3000` directement et ne stockez pas les secrets dans `ecosystem.config.cjs` ou Git.
+
 ## Références Shopware
 
 Le connecteur suit l'Admin API (`/api/*`), l'authentification OAuth des intégrations, les critères DAL et la Sync API. La référence exacte de votre instance est disponible dans son interface : `/api/_info/stoplightio.html`.

@@ -1,5 +1,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
+import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
+import { createServer } from "node:http";
 import { z } from "zod";
 
 type Json = Record<string, unknown>;
@@ -158,4 +160,44 @@ server.tool('shopware_admin_request', 'Échappatoire pour une route Admin API of
   return result({ ...(method === 'GET' ? {} : { message: mutatingNotice(path) }), response: await api(path, method, body) });
 });
 
-await server.connect(new StdioServerTransport());
+const transportMode = process.env.MCP_TRANSPORT ?? 'stdio';
+
+if (transportMode === 'http') {
+  const port = Number.parseInt(process.env.MCP_PORT ?? '3000', 10);
+  const host = process.env.MCP_HOST ?? '127.0.0.1';
+  const bearerToken = process.env.MCP_BEARER_TOKEN;
+  if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error('MCP_PORT doit être un port valide.');
+  if (!bearerToken || bearerToken.length < 24) throw new Error('En mode HTTP, définissez un MCP_BEARER_TOKEN aléatoire d’au moins 24 caractères.');
+
+  // Stateless mode: ideal behind a load balancer/reverse proxy and no session state is kept in memory.
+  const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });
+  await server.connect(transport);
+  const httpServer = createServer(async (request, response) => {
+    const path = new URL(request.url ?? '/', `http://${request.headers.host ?? 'localhost'}`).pathname;
+    if (path === '/healthz' && request.method === 'GET') {
+      response.writeHead(200, { 'content-type': 'application/json' });
+      response.end(JSON.stringify({ status: 'ok' }));
+      return;
+    }
+    if (path !== '/mcp') {
+      response.writeHead(404).end();
+      return;
+    }
+    if (request.headers.authorization !== `Bearer ${bearerToken}`) {
+      response.writeHead(401, { 'www-authenticate': 'Bearer' }).end();
+      return;
+    }
+    try {
+      await transport.handleRequest(request, response);
+    } catch (error) {
+      console.error('Erreur MCP HTTP:', error);
+      if (!response.headersSent) response.writeHead(500, { 'content-type': 'application/json' }).end(JSON.stringify({ error: 'Internal server error' }));
+    }
+  });
+  httpServer.listen(port, host, () => console.error(`Shopware MCP HTTP écoute sur http://${host}:${port}/mcp`));
+  for (const signal of ['SIGINT', 'SIGTERM'] as const) process.once(signal, () => httpServer.close(() => process.exit(0)));
+} else if (transportMode === 'stdio') {
+  await server.connect(new StdioServerTransport());
+} else {
+  throw new Error("MCP_TRANSPORT doit être 'stdio' ou 'http'.");
+}
