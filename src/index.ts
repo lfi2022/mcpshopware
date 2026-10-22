@@ -211,7 +211,7 @@ if (transportMode === 'http') {
   function unauthorized(response: import('node:http').ServerResponse) {
     const metadataUrl = `${publicUrl}/.well-known/oauth-protected-resource`;
     const header = authMode === 'oauth' || authMode === 'local-oauth'
-      ? `Bearer resource_metadata="${metadataUrl}", error="invalid_token"`
+      ? `Bearer resource_metadata="${metadataUrl}", scope="${scopes.join(' ')}", error="invalid_token"`
       : 'Bearer';
     response.writeHead(401, { 'www-authenticate': header }).end();
   }
