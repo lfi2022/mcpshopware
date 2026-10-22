@@ -14,6 +14,8 @@ Renseignez les variables de `.env` dans l'environnement qui lance le serveur (ou
 
 Dans Shopware : **Paramètres > Système > Intégrations**, créez une intégration avec les droits nécessaires. Le mode Administrateur donne l'accès complet ; une intégration ACL restreinte est préférable en production.
 
+> La clé nommée **API access key** dans un canal de vente sert uniquement à la Store API (`sw-access-key`) : catalogue, panier et checkout. Elle ne peut pas administrer les produits, commandes, clients ou réglages avec l’Admin API. L’administration complète de ce connecteur exige donc une intégration Admin API (`SHOPWARE_CLIENT_ID` et `SHOPWARE_CLIENT_SECRET`) ou un jeton Admin API déjà émis.
+
 Ajoutez ensuite `mcp.json` comme connecteur local. Avant de démarrer, transmettez explicitement ces variables au processus MCP :
 
 ```json
@@ -61,6 +63,26 @@ pm2 save
 ```
 
 L'URL MCP est `https://mcp.example.com/mcp`; `GET /healthz` est disponible localement pour la supervision. Ajoutez le jeton dans le client sous la forme `Authorization: Bearer <MCP_BEARER_TOKEN>`.
+
+### OAuth 2.1 pour connecter ChatGPT
+
+Un jeton Bearer statique convient aux tests techniques, mais n’est pas approprié pour partager le connecteur avec des utilisateurs ChatGPT. Le serveur intègre un rôle de **resource server** OAuth 2.1 : il publie les métadonnées MCP, découvre les clés JWKS de votre fournisseur OIDC et vérifie signature, émetteur, audience, expiration et scope de chaque jeton.
+
+Utilisez un fournisseur d’identité OIDC déjà en place (Auth0, Keycloak, Microsoft Entra ID, etc.), puis définissez :
+
+```bash
+export MCP_TRANSPORT=http
+export MCP_AUTH_MODE=oauth
+export MCP_PUBLIC_URL=https://mcp.example.com
+export OAUTH_ISSUER=https://id.example.com/realms/shopware
+export OAUTH_AUDIENCE=https://mcp.example.com
+export OAUTH_SCOPES=shopware:admin
+pm2 restart shopware6-admin-mcp --update-env
+```
+
+Votre fournisseur doit prendre en charge OAuth Authorization Code avec PKCE S256, publier sa découverte OIDC et délivrer un JWT avec `aud=https://mcp.example.com` et le scope `shopware:admin`. Dans ChatGPT : **Plugins → Add custom MCP server → Server URL** `https://mcp.example.com/mcp` → choisissez **OAuth**. Copiez exactement l’URL de redirection affichée par ChatGPT dans les URL autorisées de votre fournisseur d’identité. ChatGPT découvrira `/.well-known/oauth-protected-resource` et lancera le flux de connexion.
+
+Les identifiants Shopware restent sur le serveur dans les variables `SHOPWARE_*`; l’utilisateur ChatGPT ne les voit jamais et son jeton OAuth ne donne accès qu’au connecteur.
 
 Exemple Nginx :
 

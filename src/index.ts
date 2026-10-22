@@ -2,6 +2,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { createServer } from "node:http";
+import { createRemoteJWKSet, jwtVerify } from "jose";
 import { z } from "zod";
 
 type Json = Record<string, unknown>;
@@ -165,15 +166,54 @@ const transportMode = process.env.MCP_TRANSPORT ?? 'stdio';
 if (transportMode === 'http') {
   const port = Number.parseInt(process.env.MCP_PORT ?? '3000', 10);
   const host = process.env.MCP_HOST ?? '127.0.0.1';
+  const publicUrl = process.env.MCP_PUBLIC_URL?.replace(/\/$/, '');
+  const authMode = process.env.MCP_AUTH_MODE ?? 'bearer';
   const bearerToken = process.env.MCP_BEARER_TOKEN;
   if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error('MCP_PORT doit être un port valide.');
-  if (!bearerToken || bearerToken.length < 24) throw new Error('En mode HTTP, définissez un MCP_BEARER_TOKEN aléatoire d’au moins 24 caractères.');
+  if (!['bearer', 'oauth'].includes(authMode)) throw new Error("MCP_AUTH_MODE doit être 'bearer' ou 'oauth'.");
+  if (authMode === 'bearer' && (!bearerToken || bearerToken.length < 24)) throw new Error('En mode bearer, définissez un MCP_BEARER_TOKEN aléatoire d’au moins 24 caractères.');
+  const issuer = process.env.OAUTH_ISSUER?.replace(/\/$/, '');
+  const audience = process.env.OAUTH_AUDIENCE ?? publicUrl;
+  const scopes = (process.env.OAUTH_SCOPES ?? 'shopware:admin').split(/\s+/).filter(Boolean);
+  if (authMode === 'oauth' && (!publicUrl?.startsWith('https://') || !issuer?.startsWith('https://') || !audience)) {
+    throw new Error('En mode OAuth, MCP_PUBLIC_URL, OAUTH_ISSUER et OAUTH_AUDIENCE (ou MCP_PUBLIC_URL) HTTPS sont requis.');
+  }
+  let jwks: ReturnType<typeof createRemoteJWKSet> | undefined;
+  async function verifyOAuth(authorization: string | undefined) {
+    if (!authorization?.startsWith('Bearer ')) return false;
+    try {
+      if (!jwks) {
+        const discovery = await fetch(`${issuer}/.well-known/openid-configuration`);
+        const metadata = await discovery.json() as { jwks_uri?: string };
+        if (!discovery.ok || !metadata.jwks_uri?.startsWith('https://')) throw new Error('Découverte OIDC invalide.');
+        jwks = createRemoteJWKSet(new URL(metadata.jwks_uri));
+      }
+      const { payload } = await jwtVerify(authorization.slice(7), jwks, { issuer, audience });
+      const tokenScopes = typeof payload.scope === 'string' ? payload.scope.split(' ') : [];
+      return scopes.every(scope => tokenScopes.includes(scope));
+    } catch (error) {
+      console.error('Jeton OAuth MCP refusé:', error instanceof Error ? error.message : error);
+      return false;
+    }
+  }
+  function unauthorized(response: import('node:http').ServerResponse) {
+    const metadataUrl = `${publicUrl}/.well-known/oauth-protected-resource`;
+    const header = authMode === 'oauth'
+      ? `Bearer resource_metadata="${metadataUrl}", error="invalid_token"`
+      : 'Bearer';
+    response.writeHead(401, { 'www-authenticate': header }).end();
+  }
 
   // Stateless mode: ideal behind a load balancer/reverse proxy and no session state is kept in memory.
   const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });
   await server.connect(transport);
   const httpServer = createServer(async (request, response) => {
     const path = new URL(request.url ?? '/', `http://${request.headers.host ?? 'localhost'}`).pathname;
+    if (authMode === 'oauth' && (path === '/.well-known/oauth-protected-resource' || path === '/.well-known/oauth-protected-resource/mcp')) {
+      response.writeHead(200, { 'content-type': 'application/json' });
+      response.end(JSON.stringify({ resource: publicUrl, authorization_servers: [issuer], scopes_supported: scopes, bearer_methods_supported: ['header'] }));
+      return;
+    }
     if (path === '/healthz' && request.method === 'GET') {
       response.writeHead(200, { 'content-type': 'application/json' });
       response.end(JSON.stringify({ status: 'ok' }));
@@ -183,10 +223,10 @@ if (transportMode === 'http') {
       response.writeHead(404).end();
       return;
     }
-    if (request.headers.authorization !== `Bearer ${bearerToken}`) {
-      response.writeHead(401, { 'www-authenticate': 'Bearer' }).end();
-      return;
-    }
+    const authenticated = authMode === 'oauth'
+      ? await verifyOAuth(request.headers.authorization)
+      : request.headers.authorization === `Bearer ${bearerToken}`;
+    if (!authenticated) return unauthorized(response);
     try {
       await transport.handleRequest(request, response);
     } catch (error) {
