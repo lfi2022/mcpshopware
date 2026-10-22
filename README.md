@@ -32,8 +32,9 @@ Ajoutez ensuite `mcp.json` comme connecteur local. Avant de démarrer, transmett
 - `shopware_create`, `shopware_upsert`, `shopware_update`, `shopware_delete` : écritures d'entités, avec confirmation explicite pour suppression.
 - `shopware_sync` : opérations de masse sur `/api/_action/sync`.
 - `shopware_action` : accès contrôlé aux actions Admin API non couvertes, par exemple documents, cache, indexation, import/export, règles et configuration.
+- `shopware_admin_request` : accès de dernier recours à toute route officielle `/api/*`, y compris les routes d'extensions ; les routes OAuth sont bloquées.
 - `shopware_transition_state` : transitions des commandes, transactions et livraisons.
-- `shopware_upload_media` : import d'un fichier base64 ou depuis une URL.
+- `shopware_upload_media` : import d'un fichier base64 ou depuis une URL dans une entité `media` existante.
 
 Les outils DAL universels rendent le serveur compatible avec les entités natives, les champs personnalisés et les entités ajoutées par des extensions, sans figer une liste de routes qui diffère selon la version de Shopware.
 

@@ -59,6 +59,17 @@ async function api(path: string, method = 'GET', body?: unknown) {
   return data;
 }
 
+async function apiBinary(path: string, contentType: string, bytes: Uint8Array) {
+  const response = await fetch(new URL(path, config()), {
+    method: 'POST', headers: { authorization: `Bearer ${await token()}`, 'content-type': contentType }, body: bytes as unknown as BodyInit
+  });
+  const text = await response.text();
+  let data: unknown = text;
+  try { data = text ? JSON.parse(text) : { success: response.ok, status: response.status }; } catch { /* text response */ }
+  if (!response.ok) throw new Error(`Téléversement média échoué (${response.status}): ${safeError(data)}`);
+  return data;
+}
+
 function result(data: unknown) { return { content: [{ type: 'text' as const, text: JSON.stringify(data, null, 2) }] }; }
 function mutatingNotice(action: string) { return `Opération confirmée : ${action}`; }
 function assertConfirmed(confirm: boolean, operation: string) { if (!confirm) throw new Error(`${operation} peut modifier Shopware. Relancez avec confirm: true après validation.`); }
@@ -77,17 +88,26 @@ server.tool('shopware_get', 'Lit une entité par UUID. Ajoutez associations dans
   entity: entityName, id: identifier, criteria: jsonObject.optional()
 }, async ({ entity, id, criteria }) => result(await api(`/api/${entity}/${id}`, 'POST', criteria ?? {})));
 
-for (const [name, verb, description] of [
-  ['shopware_create', 'POST', 'Crée une entité DAL.'],
-  ['shopware_upsert', 'PATCH', 'Crée ou met à jour une entité DAL.'],
-  ['shopware_update', 'PATCH', 'Met à jour une entité DAL existante.'],
-] as const) {
-  server.tool(name, description, { entity: entityName, id: identifier.optional(), payload: jsonObject, confirm: z.boolean().default(false) }, async ({ entity, id, payload, confirm }) => {
-    assertConfirmed(confirm, description);
-    const path = name === 'shopware_update' ? `/api/${entity}/${id!}` : `/api/${entity}${id ? `/${id}` : ''}`;
-    return result({ message: mutatingNotice(description), response: await api(path, verb, payload) });
-  });
-}
+server.tool('shopware_create', 'Crée une entité DAL.', {
+  entity: entityName, id: identifier.optional(), payload: jsonObject, confirm: z.boolean().default(false)
+}, async ({ entity, id, payload, confirm }) => {
+  assertConfirmed(confirm, 'La création');
+  return result({ message: mutatingNotice('création'), response: await api(`/api/${entity}${id ? `/${id}` : ''}`, 'POST', payload) });
+});
+
+server.tool('shopware_upsert', 'Crée ou met à jour une entité DAL.', {
+  entity: entityName, id: identifier.optional(), payload: jsonObject, confirm: z.boolean().default(false)
+}, async ({ entity, id, payload, confirm }) => {
+  assertConfirmed(confirm, 'L’upsert');
+  return result({ message: mutatingNotice('upsert'), response: await api(`/api/${entity}${id ? `/${id}` : ''}`, 'PATCH', payload) });
+});
+
+server.tool('shopware_update', 'Met à jour une entité DAL existante.', {
+  entity: entityName, id: identifier, payload: jsonObject, confirm: z.boolean().default(false)
+}, async ({ entity, id, payload, confirm }) => {
+  assertConfirmed(confirm, 'La mise à jour');
+  return result({ message: mutatingNotice('mise à jour'), response: await api(`/api/${entity}/${id}`, 'PATCH', payload) });
+});
 
 server.tool('shopware_delete', 'Supprime définitivement une entité DAL.', { entity: entityName, id: identifier, confirm: z.boolean().default(false) }, async ({ entity, id, confirm }) => {
   assertConfirmed(confirm, 'La suppression');
@@ -107,14 +127,19 @@ server.tool('shopware_transition_state', 'Exécute une transition d’état sur 
   return result({ message: mutatingNotice(`transition ${transition}`), response: await api(`/api/_action/${scope}/${id}/state/${transition}`, 'POST', {}) });
 });
 
-server.tool('shopware_upload_media', 'Charge un média par URL distante ou contenu base64 dans un dossier média.', {
-  mediaFolderId: identifier, fileName: z.string().min(1).max(255), url: z.string().url().optional(), base64: z.string().min(1).optional(), confirm: z.boolean().default(false)
-}, async ({ mediaFolderId, fileName, url, base64, confirm }) => {
+server.tool('shopware_upload_media', 'Attache un fichier à une entité media existante, depuis une URL ou une chaîne base64.', {
+  mediaId: identifier, fileName: z.string().regex(/^.+\.[A-Za-z0-9]+$/).max(255), url: z.string().url().optional(), base64: z.string().min(1).optional(), contentType: z.string().min(1).default('application/octet-stream'), confirm: z.boolean().default(false)
+}, async ({ mediaId, fileName, url, base64, contentType, confirm }) => {
   assertConfirmed(confirm, 'L’import du média');
   if ((url ? 1 : 0) + (base64 ? 1 : 0) !== 1) throw new Error('Fournissez exactement url ou base64.');
-  const endpoint = url ? '/api/_action/media/upload-by-url' : '/api/_action/media/upload';
-  const payload = url ? { mediaFolderId, fileName, url } : { mediaFolderId, fileName, file: base64 };
-  return result({ message: mutatingNotice('import média'), response: await api(endpoint, 'POST', payload) });
+  const dot = fileName.lastIndexOf('.');
+  const baseName = fileName.slice(0, dot);
+  const extension = fileName.slice(dot + 1).toLowerCase();
+  const endpoint = `/api/_action/media/${mediaId}/upload?extension=${encodeURIComponent(extension)}&fileName=${encodeURIComponent(baseName)}`;
+  const response = url
+    ? await api(endpoint, 'POST', { url })
+    : await apiBinary(endpoint, contentType, Buffer.from(base64!, 'base64'));
+  return result({ message: mutatingNotice('import média'), response });
 });
 
 server.tool('shopware_action', 'Exécute une action Admin API documentée non couverte par un autre outil (cache, index, documents, import/export, config…). Les routes OAuth sont interdites.', {
@@ -122,6 +147,14 @@ server.tool('shopware_action', 'Exécute une action Admin API documentée non co
   method: z.enum(['GET', 'POST', 'PATCH', 'PUT', 'DELETE']).default('POST'), body: jsonObject.optional(), confirm: z.boolean().default(false)
 }, async ({ path, method, body, confirm }) => {
   if (method !== 'GET') assertConfirmed(confirm, `L’action ${path}`);
+  return result({ ...(method === 'GET' ? {} : { message: mutatingNotice(path) }), response: await api(path, method, body) });
+});
+
+server.tool('shopware_admin_request', 'Échappatoire pour une route Admin API officielle non couverte par les autres outils (extensions incluses). Les routes OAuth sont interdites.', {
+  path: z.string().regex(/^\/api\/(?!oauth(?:\/|$))[a-zA-Z0-9_./-]+(?:\?[a-zA-Z0-9_=&.-]+)?$/),
+  method: z.enum(['GET', 'POST', 'PATCH', 'PUT', 'DELETE']).default('GET'), body: jsonObject.optional(), confirm: z.boolean().default(false)
+}, async ({ path, method, body, confirm }) => {
+  if (method !== 'GET') assertConfirmed(confirm, `La requête ${path}`);
   return result({ ...(method === 'GET' ? {} : { message: mutatingNotice(path) }), response: await api(path, method, body) });
 });
 

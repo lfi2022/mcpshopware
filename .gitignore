@@ -1,0 +1,20 @@
+# Dépendances et sorties de build
+node_modules/
+dist/
+coverage/
+
+# Secrets et configuration locale
+.env
+.env.*
+!.env.example
+
+# Journaux et fichiers temporaires
+*.log
+logs/
+*.tmp
+
+# Éditeurs et système
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
