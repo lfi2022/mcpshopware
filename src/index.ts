@@ -5,6 +5,7 @@ import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/
 import { createServer } from "node:http";
 import { createRemoteJWKSet, jwtVerify } from "jose";
 import { LocalOAuthProvider } from './local-oauth.js';
+import { registerPartnerBridge } from './partner-bridge.js';
 import { z } from "zod";
 
 type Json = Record<string, unknown>;
@@ -79,10 +80,11 @@ function result(data: unknown) { return { content: [{ type: 'text' as const, tex
 function mutatingNotice(action: string) { return `Opération confirmée : ${action}`; }
 function assertConfirmed(confirm: boolean, operation: string) { if (!confirm) throw new Error(`${operation} peut modifier Shopware. Relancez avec confirm: true après validation.`); }
 
-const SERVER_VERSION = '0.1.1';
+const SERVER_VERSION = '0.1.2';
 
 function createMcpServer() {
 const server = new McpServer({ name: 'shopware6-admin', version: SERVER_VERSION });
+registerPartnerBridge(server, api);
 
 server.tool('shopware_status', 'Teste l’authentification Admin API et retourne des informations de l’instance.', {}, async () => result(await api('/api/_info/version')));
 server.tool('shopware_entities', 'Liste les définitions d’entités disponibles, y compris celles des extensions.', {}, async () => result(await api('/api/_info/entity-schema.json')));

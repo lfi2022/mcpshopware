@@ -41,7 +41,7 @@ test(`${mode}: discovery supports repeated and concurrent independent clients`, 
     const unauthorized = await fetch(url, { method: 'POST' });
     assert.equal(unauthorized.status, 401);
     const health = await (await fetch(new URL('/healthz', url))).json();
-    assert.equal(health.version, '0.1.1');
+    assert.equal(health.version, '0.1.2');
     if (mode === 'local-oauth') {
       assert.match(unauthorized.headers.get('www-authenticate'), /resource_metadata=/);
       const metadata = await (await fetch(new URL('/.well-known/oauth-authorization-server', url))).json();
@@ -89,6 +89,7 @@ test(`${mode}: discovery supports repeated and concurrent independent clients`, 
         const listing = await client.listTools();
         assert.ok(listing.tools.some(tool => tool.name === 'shopware_update_product'));
         assert.ok(listing.tools.some(tool => tool.name === 'shopware_search'));
+        assert.ok(listing.tools.some(tool => tool.name === 'shopware_bridge_supplier_sync'));
         assert.ok(listing.tools.every(tool => tool.inputSchema.type === 'object'));
       }
     }

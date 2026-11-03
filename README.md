@@ -51,6 +51,69 @@ Ajoutez ensuite `mcp.json` comme connecteur local. Avant de démarrer, transmett
 
 ## Outils disponibles
 
+### LFINFO Partner Bridge 1.9.0
+
+La version MCP **0.1.2** ajoute **40 outils `shopware_bridge_*`** à partir des
+contrôleurs du ZIP `LFINFO-Partner-Bridge-1.9.0.zip` : toutes les routes HTTP
+actives sont couvertes, y compris TD SYNNEX, Copaco, Ingram et Open Icecat.
+Le ZIP original est conservé sans modification. Aucun import ne démarre au lancement du MCP.
+
+Installer et activer le plugin **TDBridge** sur la boutique désignée par
+`SHOPWARE_URL`. Le MCP réutilise `SHOPWARE_CLIENT_ID` et `SHOPWARE_CLIENT_SECRET` :
+aucune nouvelle variable d’environnement n’est nécessaire. Les identifiants
+fournisseurs et Icecat restent configurés dans le bridge. L’intégration Shopware
+doit disposer de `td_bridge:read`, `td_bridge:import`, `td_bridge:configure` et
+`td_bridge:documents`, ou du rôle Administrateur. Le MCP ne contourne pas ces droits.
+
+| Besoin | Outils (préfixe `shopware_bridge_`) |
+| --- | --- |
+| Découvrir les paramètres, routes et droits | `capabilities`, `stats`, `settings`, `suppliers` |
+| Chercher des références | `catalogue`, `catalogue_facets`, `supplier_offers`, `ingram_catalogue` |
+| Paramétrer les fournisseurs et Icecat | `save_settings`, `copaco_settings`, `copaco_save_settings`, `ingram_settings`, `ingram_save_settings` |
+| Tester et diagnostiquer | `test`, `ingram_test`, `diagnose`, `diagnose_import` |
+| Importer / synchroniser / enrichir une sélection | `import` (TD), `supplier_sync` (les trois fournisseurs) |
+| Compléter les photos manquantes | `missing_preview`, puis `enrich_missing` |
+| Synchroniser tous les produits liés actifs | `sync_preview`, puis `sync_all` |
+| Suivre les traitements | `list` (`kind=jobs`, `logs` ou `links`), `workers`, `process`, `job_action` |
+| Gérer les liaisons | `links`, `supplier_bind`, `ingram_link`, `reconcile` |
+| Charger les catalogues | `cache_status`, `cache_action`, `copaco_status`, `copaco_refresh`, `feed_preview`, `feed_commit` |
+| Lire les documents TD | `documents` (`type=orders` ou `invoices`) |
+
+Exemple : enrichir les descriptions, caractéristiques et images de références TD
+déjà liées. Vérifier d’abord les paramètres et l’aperçu :
+
+```json
+{"name":"shopware_bridge_icecat_preview","arguments":{"body":{"partNumber":"REFERENCE-TD"}}}
+```
+
+Si nécessaire, activer Icecat avec `shopware_bridge_save_settings` et un `body`
+contenant `icecatEnabled`, `icecatDescription`, `icecatSpecs`, `icecatImages` à
+`true`, après avoir configuré le compte Icecat. `icecatReplace` contrôle le
+remplacement de contenu existant ; consulter sa valeur avant de la modifier.
+Créer ensuite la tâche sur les références choisies :
+
+```json
+{"name":"shopware_bridge_import","arguments":{"body":{"parts":["REFERENCE-TD"],"type":"icecat"},"confirm":true}}
+```
+
+Pour Copaco/Ingram, utiliser `shopware_bridge_supplier_sync` avec
+`body.supplier` égal à `copaco` ou `ingram`, les `parts` et `type: "icecat"`.
+Les paramètres sont figés à la création de la tâche. Les imports/enrichissements
+retournent un identifiant de tâche ; contrôler `list` avec `kind: "jobs"`, puis
+`kind: "logs"` et `query.term` égal à cet identifiant. Les workers Shopware doivent
+tourner ; `process` permet un traitement manuel d’un lot de la file.
+
+Chaque écriture exige `confirm: true`. Les recherches POST, aperçus et lectures
+de documents restent accessibles sans confirmation. L’ancienne action
+`catalogue-index/{action}`, refusée par le plugin lui-même, est remplacée par
+la recherche fournisseur et le cache ; `catalogue_index` conserve sa lecture d’état.
+Les commandes CLI et l’installation ne disposent pas de routes HTTP dans le ZIP.
+
+Après transfert des sources sur le serveur MCP, exécuter les commandes de
+déploiement PM2 ci-dessus et actualiser les outils du connecteur. `/healthz` doit
+indiquer `0.1.2`. Les tests utilisent des réponses simulées et vérifient la
+couverture des routes extraites du ZIP ; ils ne valident pas une boutique réelle.
+
 - `shopware_status` : test de connexion et version de l'API.
 - `shopware_entities` : liste des entités connues par l'instance.
 - `shopware_search`, `shopware_get` : lecture DAL avec critères Shopware complets.

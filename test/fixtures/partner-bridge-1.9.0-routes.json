@@ -1,0 +1,158 @@
+[
+    {
+        "path":  "/api/_action/td-bridge/diagnose-import",
+        "method":  "GET"
+    },
+    {
+        "path":  "/api/_action/td-bridge/settings",
+        "method":  "GET"
+    },
+    {
+        "path":  "/api/_action/td-bridge/settings",
+        "method":  "POST"
+    },
+    {
+        "path":  "/api/_action/td-bridge/test",
+        "method":  "POST"
+    },
+    {
+        "path":  "/api/_action/td-bridge/diagnose",
+        "method":  "POST"
+    },
+    {
+        "path":  "/api/_action/td-bridge/catalogue",
+        "method":  "POST"
+    },
+    {
+        "path":  "/api/_action/td-bridge/catalogue-index",
+        "method":  "GET"
+    },
+    {
+        "path":  "/api/_action/td-bridge/catalogue-facets",
+        "method":  "POST"
+    },
+    {
+        "path":  "/api/_action/td-bridge/catalogue-index/{action}",
+        "method":  "POST"
+    },
+    {
+        "path":  "/api/_action/td-bridge/supplier-cache",
+        "method":  "GET"
+    },
+    {
+        "path":  "/api/_action/td-bridge/supplier-cache/{action}",
+        "method":  "POST"
+    },
+    {
+        "path":  "/api/_action/td-bridge/icecat/preview",
+        "method":  "POST"
+    },
+    {
+        "path":  "/api/_action/td-bridge/import",
+        "method":  "POST"
+    },
+    {
+        "path":  "/api/_action/td-bridge/process",
+        "method":  "POST"
+    },
+    {
+        "path":  "/api/_action/td-bridge/sync-all",
+        "method":  "GET"
+    },
+    {
+        "path":  "/api/_action/td-bridge/sync-all",
+        "method":  "POST"
+    },
+    {
+        "path":  "/api/_action/td-bridge/icecat-missing",
+        "method":  "GET"
+    },
+    {
+        "path":  "/api/_action/td-bridge/icecat-missing",
+        "method":  "POST"
+    },
+    {
+        "path":  "/api/_action/td-bridge/workers",
+        "method":  "GET"
+    },
+    {
+        "path":  "/api/_action/td-bridge/jobs/{id}/{action}",
+        "method":  "POST"
+    },
+    {
+        "path":  "/api/_action/td-bridge/links",
+        "method":  "POST"
+    },
+    {
+        "path":  "/api/_action/td-bridge/list/{kind}",
+        "method":  "GET"
+    },
+    {
+        "path":  "/api/_action/td-bridge/stats",
+        "method":  "GET"
+    },
+    {
+        "path":  "/api/_action/td-bridge/documents/{type}",
+        "method":  "POST"
+    },
+    {
+        "path":  "/api/_action/td-bridge/ingram/settings",
+        "method":  "GET"
+    },
+    {
+        "path":  "/api/_action/td-bridge/ingram/settings",
+        "method":  "POST"
+    },
+    {
+        "path":  "/api/_action/td-bridge/ingram/test",
+        "method":  "POST"
+    },
+    {
+        "path":  "/api/_action/td-bridge/ingram/catalogue",
+        "method":  "POST"
+    },
+    {
+        "path":  "/api/_action/td-bridge/ingram/link",
+        "method":  "POST"
+    },
+    {
+        "path":  "/api/_action/td-bridge/suppliers",
+        "method":  "GET"
+    },
+    {
+        "path":  "/api/_action/td-bridge/supplier-offers",
+        "method":  "POST"
+    },
+    {
+        "path":  "/api/_action/td-bridge/supplier-feed/{action}",
+        "method":  "POST"
+    },
+    {
+        "path":  "/api/_action/td-bridge/supplier-bind",
+        "method":  "POST"
+    },
+    {
+        "path":  "/api/_action/td-bridge/supplier-sync",
+        "method":  "POST"
+    },
+    {
+        "path":  "/api/_action/td-bridge/reconcile-products",
+        "method":  "POST"
+    },
+    {
+        "path":  "/api/_action/td-bridge/copaco/settings",
+        "method":  "GET"
+    },
+    {
+        "path":  "/api/_action/td-bridge/copaco/settings",
+        "method":  "POST"
+    },
+    {
+        "path":  "/api/_action/td-bridge/copaco/status",
+        "method":  "GET"
+    },
+    {
+        "path":  "/api/_action/td-bridge/copaco/refresh",
+        "method":  "POST"
+    }
+]
